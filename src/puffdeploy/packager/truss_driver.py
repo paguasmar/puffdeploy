@@ -19,7 +19,7 @@ class Packager:
             app_py.write_text("""from fastapi import FastAPI
 from pydantic import BaseModel
 
-app = FastAPI(title="VeloxML Model Service")
+app = FastAPI(title="Puffdeploy Model Service")
 
 class PredictRequest(BaseModel):
     prompt: str
@@ -36,7 +36,7 @@ def health():
 def predict(req: PredictRequest):
     # Model inference logic goes here
     return {
-        "response": f"Echo: {req.prompt} (Processed by VeloxML in AWS VPC)",
+        "response": f"Echo: {req.prompt} (Processed by Puffdeploy in AWS VPC)",
         "tokens": len(req.prompt.split())
     }
 """)

@@ -1,12 +1,12 @@
 from typer.testing import CliRunner
-from veloxml.cli import app
+from puffdeploy.cli import app
 
 runner = CliRunner()
 
 def test_version_command():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "VeloxML CLI" in result.stdout
+    assert "Puffdeploy CLI" in result.stdout
 
 def test_help_command():
     result = runner.invoke(app, ["--help"])

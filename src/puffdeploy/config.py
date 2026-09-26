@@ -25,7 +25,14 @@ class RuntimeConfig(BaseModel):
     command: str = "uvicorn app:app --host 0.0.0.0 --port 8000"
     setup: Optional[str] = None
 
-class VeloxConfig(BaseModel):
+class PuffConfig(BaseModel):
+    pass
+
+# Alias for backward compatibility
+VeloxConfig = PuffConfig
+PuffdeployConfig = PuffConfig
+
+class PuffConfig(BaseModel):
     name: str = Field(default="my-model-service")
     version: str = "0.1.1"
     compute: ComputeConfig = Field(default_factory=ComputeConfig)
@@ -33,14 +40,14 @@ class VeloxConfig(BaseModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
     @classmethod
-    def load_or_default(cls, path: Path = Path("veloxml.yaml")) -> "VeloxConfig":
+    def load_or_default(cls, path: Path = Path("puffdeploy.yaml")) -> "VeloxConfig":
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
                 return cls(**data)
         return cls()
 
-    def save(self, path: Path = Path("veloxml.yaml")):
+    def save(self, path: Path = Path("puffdeploy.yaml")):
         data = self.model_dump(exclude_none=True)
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, sort_keys=False, default_flow_style=False)

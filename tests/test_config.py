@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
-from veloxml.config import VeloxConfig
+from puffdeploy.config import PuffConfig
+VeloxConfig = PuffConfig
 
 def test_default_config():
     config = VeloxConfig()
@@ -11,7 +12,7 @@ def test_default_config():
 
 def test_save_and_load_config():
     with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "veloxml.yaml"
+        config_path = Path(tmpdir) / "puffdeploy.yaml"
         cfg = VeloxConfig(name="custom-model")
         cfg.compute.accelerator = "T4:1"
         cfg.save(config_path)
@@ -21,7 +22,7 @@ def test_save_and_load_config():
         assert loaded.compute.accelerator == "T4:1"
 
 def test_orchestrator_generate_spec():
-    from veloxml.orchestrator.skypilot import SkyPilotOrchestrator
+    from puffdeploy.orchestrator.skypilot import SkyPilotOrchestrator
     cfg = VeloxConfig(name="test-spec")
     cfg.runtime.setup = "pip install fastapi"
     orch = SkyPilotOrchestrator(cfg)

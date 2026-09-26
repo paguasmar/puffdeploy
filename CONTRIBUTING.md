@@ -1,6 +1,6 @@
-# Contributing to VeloxML ⚡
+# Contributing to Puffdeploy ⚡
 
-Thank you for your interest in contributing to VeloxML! We welcome contributions from the community to help make LLM and SLM deployments seamless.
+Thank you for your interest in contributing to Puffdeploy! We welcome contributions from the community to help make LLM and SLM deployments seamless.
 
 ---
 
@@ -8,8 +8,8 @@ Thank you for your interest in contributing to VeloxML! We welcome contributions
 
 1. **Fork and clone the repository:**
    ```bash
-   git clone https://github.com/<your-username>/veloxml-deploy.git
-   cd veloxml-deploy
+   git clone https://github.com/<your-username>/puffdeploy.git
+   cd puffdeploy
    ```
 
 2. **Create a virtual environment:**
