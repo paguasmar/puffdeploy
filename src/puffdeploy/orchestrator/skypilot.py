@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import yaml
 
-from veloxml.config import VeloxConfig
-from veloxml.ui.console import (
+from puffdeploy.config import PuffConfig, PuffConfig
+from puffdeploy.ui.console import (
     console,
     print_step,
     print_success,
@@ -30,7 +30,7 @@ from veloxml.ui.console import (
 )
 
 class SkyPilotOrchestrator:
-    def __init__(self, config: VeloxConfig, workdir: Path = Path(".")):
+    def __init__(self, config: PuffConfig, workdir: Path = Path(".")):
         self.config = config
         self.workdir = workdir
 
@@ -99,9 +99,9 @@ class SkyPilotOrchestrator:
         service_name = self.config.name
         
         print_step(1, 3, "Compiling Cloud Spec", f"Target: {self.config.compute.cloud.upper()} Spot")
-        yaml_file = self.workdir / ".veloxml" / f"{service_name}.sky.yaml"
+        yaml_file = self.workdir / ".puffdeploy" / f"{service_name}.sky.yaml"
         self.write_spec(yaml_file)
-        print_success(f"Optimized cluster specification generated at .veloxml/{service_name}.sky.yaml")
+        print_success(f"Optimized cluster specification generated at .puffdeploy/{service_name}.sky.yaml")
 
         if dry_run:
             print_success("Dry-run validation successful. No actual cloud costs incurred.")
@@ -157,7 +157,7 @@ class SkyPilotOrchestrator:
                 print_error_box(
                     "Deployment Failed",
                     f"Orchestrator encountered an error: {clean_err}",
-                    "Run `veloxml deploy --verbose` to inspect full cloud logs."
+                    "Run `puff deploy --verbose` to inspect full cloud logs."
                 )
             return None
 
@@ -179,7 +179,7 @@ class SkyPilotOrchestrator:
                 if endpoint:
                     try:
                         health_url = f"{endpoint.rstrip('/')}/health"
-                        req = urllib.request.Request(health_url, headers={"User-Agent": "VeloxML-Prober"})
+                        req = urllib.request.Request(health_url, headers={"User-Agent": "Puffdeploy-Prober"})
                         with urllib.request.urlopen(req, timeout=3) as resp:
                             if resp.status == 200:
                                 print_success("Readiness probe passed (HTTP 200 OK)")
@@ -189,7 +189,7 @@ class SkyPilotOrchestrator:
                 time.sleep(6)
         
         print_warning("Model is taking longer than usual to become ready.")
-        console.print("  Check live status anytime with: [bold cyan]veloxml status[/bold cyan]\n")
+        console.print("  Check live status anytime with: [bold cyan]puff status[/bold cyan]\n")
         return None
 
     def get_service_endpoint(self, service_name: str) -> Optional[str]:
@@ -210,7 +210,7 @@ class SkyPilotOrchestrator:
 
     @staticmethod
     def list_services() -> List[Dict[str, Any]]:
-        """Lists all active VeloxML services in a structured format."""
+        """Lists all active Puffdeploy services in a structured format."""
         cmd = [get_sky_cmd(), "serve", "status"]
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:

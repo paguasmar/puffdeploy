@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
-from veloxml.cli import app
-from veloxml.orchestrator.skypilot import SkyPilotOrchestrator
+from puffdeploy.cli import app
+from puffdeploy.orchestrator.skypilot import SkyPilotOrchestrator
 
 runner = CliRunner()
 
@@ -8,7 +8,7 @@ def test_cli_status_clean_output(monkeypatch):
     monkeypatch.setattr(SkyPilotOrchestrator, "list_services", lambda: [])
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
-    assert "No active VeloxML services" in result.stdout
+    assert "No active Puffdeploy services" in result.stdout
 
 def test_cli_status_with_services(monkeypatch):
     mock_services = [{

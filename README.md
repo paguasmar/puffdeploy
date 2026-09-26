@@ -1,9 +1,9 @@
-# VeloxML
+# Puffdeploy 🐡
 
 Deploy open-source LLMs directly to your own AWS/GCP account with one command. Zero Docker, zero Kubernetes, scale-to-zero.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="VeloxML Demo" width="100%" />
+  <img src="assets/demo.gif" alt="Puffdeploy Demo" width="100%" />
 </p>
 
 **Contents**
@@ -31,11 +31,11 @@ This repo is still under heavy development and the documentation is evolving. Yo
 
 ```bash
 # 1. Initialize a model service
-veloxml init my-model
+puff init my-model
 cd my-model
 
 # 2. Deploy to AWS with scale-to-zero
-veloxml deploy
+puff deploy
 
 # Output:
 # Replica ready at http://34.201.45.12:8000
@@ -53,7 +53,7 @@ This is a CLI and deployment engine that allows you to deploy open-source LLMs d
 
 It works like this:
 
-1. the CLI reads your model code (`app.py`) and hardware spec (`veloxml.yaml`)
+1. the CLI reads your model code (`app.py`) and hardware spec (`puffdeploy.yaml`)
 2. it provisions an optimized Spot or On-Demand instance (via SkyPilot) directly inside your cloud account
 3. it prepares the runtime, loads the weights, verifies the health probe, and prints a ready-to-test `curl` command.
 
@@ -62,13 +62,13 @@ It works like this:
 A few reasons:
 
 1. Your data, prompts, and model weights never leave your own AWS/GCP account. Zero third-party servers, and zero SOC2 or HIPAA compliance headaches
-2. You don't have to pay a $50k-$100k enterprise paywall just to deploy inside your private VPC. VeloxML gives you that exact serverless experience natively in your account on day one
+2. You don't have to pay a $50k-$100k enterprise paywall just to deploy inside your private VPC. Puffdeploy gives you that exact serverless experience natively in your account on day one
 3. Zero framework lock-in. Modal forces you to rewrite your code with proprietary decorators (`@modal.function`)
 
 #### What are the benefits?
 
 1. The beauty of deploying directly to your own cloud account is that your proprietary data, customer queries, and model weights never leave your security perimeter. Zero third-party compliance reviews (SOC2/HIPAA) needed.
-2. Cost efficiency. VeloxML defaults to Spot instances (`use_spot: true`), allowing you to serve models on AWS without burning $1,500+/mo on idle, unmanaged GPUs.
+2. Cost efficiency. Puffdeploy defaults to Spot instances (`use_spot: true`), allowing you to serve models on AWS without burning $1,500+/mo on idle, unmanaged GPUs.
 3. This is built on SkyPilot, an [extremely robust open-source compute orchestrator](https://github.com/skypilot-org/skypilot) developed at UC Berkeley.
 
 #### What can I build with this?
@@ -86,8 +86,8 @@ Deploy a real, open-weights Small Language Model ([Qwen/Qwen2.5-0.5B-Instruct](h
 1. Install and verify cloud access
 
 ```bash
-pip install veloxml-deploy
-veloxml check
+pip install puffdeploy
+puff check
 ```
 
 2. Create project folder
@@ -117,9 +117,9 @@ def predict(data: dict):
     return {"response": pipe([{"role": "user", "content": data["prompt"]}], max_new_tokens=50)[0]["generated_text"][-1]["content"]}
 ```
 
-4. Create `veloxml.yaml`
+4. Create `puffdeploy.yaml`
 
-Paste this into `veloxml.yaml`:
+Paste this into `puffdeploy.yaml`:
 
 ```yaml
 name: llm-service
@@ -136,10 +136,10 @@ runtime:
 Run:
 
 ```bash
-veloxml deploy
+puff deploy
 ```
 
-VeloxML provisions the AWS Spot instance, installs dependencies, verifies the `/health` probe, and outputs your live replica URL.
+Puffdeploy provisions the AWS Spot instance, installs dependencies, verifies the `/health` probe, and outputs your live replica URL.
 
 6. Test your live endpoint
 
@@ -163,7 +163,7 @@ Output:
 When finished testing, terminate all cloud compute to avoid lingering charges:
 
 ```bash
-veloxml down --all
+puff down --all
 ```
 
 ## Contributing

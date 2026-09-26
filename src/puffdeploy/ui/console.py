@@ -19,7 +19,7 @@ custom_theme = Theme({
 console = Console(theme=custom_theme)
 
 LOGO = """[bold cyan]
-  🛸 VeloxML[/bold cyan] [dim]v0.1.1[/dim]  [dim italic]Push to API in one command (AWS / GCP)[/dim italic]
+  🐡 Puffdeploy[/bold cyan] [dim]v0.1.1[/dim]  [dim italic]Push to API in one command (AWS / GCP)[/dim italic]
 """
 
 def print_banner():
@@ -53,7 +53,7 @@ def print_error_box(title: str, reason: str, suggestion: Optional[str] = None):
     ))
     console.print()
 
-def print_curl_box(service_name: str, endpoint_url: str, sample_payload: str = '{"prompt": "Hello VeloxML"}'):
+def print_curl_box(service_name: str, endpoint_url: str, sample_payload: str = '{"prompt": "Hello Puffdeploy"}'):
     predict_url = f"{endpoint_url.rstrip('/')}/predict"
     health_url = f"{endpoint_url.rstrip('/')}/health"
     
@@ -75,7 +75,7 @@ def print_curl_box(service_name: str, endpoint_url: str, sample_payload: str = '
     console.print()
     console.print(Panel(
         body,
-        title="[bold green]🛸 VeloxML Deployment Success 🛸[/bold green]",
+        title="[bold green]🐡 Puffdeploy Deployment Success 🐡[/bold green]",
         border_style="green",
         padding=(1, 2),
         expand=False
@@ -83,14 +83,14 @@ def print_curl_box(service_name: str, endpoint_url: str, sample_payload: str = '
     console.print()
 
 def print_services_table(services: List[Dict[str, Any]]):
-    """Prints a polished table of active VeloxML services."""
+    """Prints a polished table of active Puffdeploy services."""
     if not services:
-        console.print("[dim]No active VeloxML services running on your cloud account.[/dim]\n")
-        console.print("Deploy a model with: [bold cyan]veloxml deploy[/bold cyan]\n")
+        console.print("[dim]No active Puffdeploy services running on your cloud account.[/dim]\n")
+        console.print("Deploy a model with: [bold cyan]puff deploy[/bold cyan]\n")
         return
 
     table = Table(
-        title="🛸 Active VeloxML Services",
+        title="🐡 Active Puffdeploy Services",
         header_style="bold cyan",
         border_style="dim",
         expand=True,

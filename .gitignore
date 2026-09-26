@@ -216,8 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-# VeloxML local state and generated configs
-.veloxml/
+# Puffdeploy local state and generated configs
+.puffdeploy/
 *.sky.yaml
 .sky/
 
