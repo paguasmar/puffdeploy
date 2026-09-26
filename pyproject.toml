@@ -1,6 +1,6 @@
 [project]
 name = "puffdeploy"
-version = "0.1.1"
+version = "0.2.0"
 description = "Deploy open-source LLMs to production in one command. Open-source engine that provisions optimized serverless infrastructure directly in your AWS/GCP."
 readme = "README.md"
 authors = [
