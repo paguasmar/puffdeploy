@@ -19,7 +19,7 @@ custom_theme = Theme({
 console = Console(theme=custom_theme)
 
 LOGO = """[bold cyan]
-  🐡 Puffdeploy[/bold cyan] [dim]v0.1.1[/dim]  [dim italic]Push to API in one command (AWS / GCP)[/dim italic]
+  🐡 Puffdeploy[/bold cyan] [dim]v0.2.0[/dim]  [dim italic]Push to API in one command (AWS / GCP)[/dim italic]
 """
 
 def print_banner():
