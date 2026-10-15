@@ -127,3 +127,24 @@ def print_services_table(services: List[Dict[str, Any]]):
     console.print()
     console.print(table)
     console.print()
+
+
+def print_capacity_bottleneck_box(region: str, suggestions: List[str]):
+    """Displays a clean, actionable notice when the cloud provider is temporarily out of GPU stock."""
+    content = (
+        f"[bold yellow]Your quota is approved, but AWS datacenters in [bold white]{region}[/bold white] "
+        f"are physically sold out of this GPU right now.[/bold yellow]\n\n"
+        f"[bold cyan]Fastest paths to deploy:[/bold cyan]\n"
+    )
+    for i, s in enumerate(suggestions, 1):
+        content += f"  {i}. [bold white]{s}[/bold white]\n"
+
+    console.print()
+    console.print(Panel(
+        content.rstrip(),
+        title="[bold yellow]⚠ AWS Capacity Bottleneck[/bold yellow]",
+        border_style="yellow",
+        padding=(1, 2),
+        expand=False
+    ))
+    console.print()
