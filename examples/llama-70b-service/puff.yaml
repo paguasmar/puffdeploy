@@ -1,0 +1,23 @@
+name: llama-70b-service
+version: 0.1.0
+
+compute:
+  cloud: aws
+  region: eu-central-1
+  accelerator: L4:4
+  instance_type: g6.12xlarge
+  use_spot: true
+
+service:
+  port: 8000
+  readiness_probe: /health
+  initial_delay_seconds: 1200
+  predict_path: /predict
+  min_replicas: 1
+  max_replicas: 1
+  auto_restart: true
+
+runtime:
+  app_entrypoint: app:app
+  command: uvicorn app:app --host 0.0.0.0 --port 8000
+  setup: pip install vllm fastapi uvicorn

@@ -1,0 +1,17 @@
+name: aws-test-echo
+version: 0.1.0
+compute:
+  cloud: aws
+  region: us-east-1
+  cpus: 2+
+  memory: 4+
+  use_spot: true
+service:
+  port: 8000
+  readiness_probe: /health
+  predict_path: /predict
+  min_replicas: 1
+  max_replicas: 1
+runtime:
+  command: uvicorn app:app --host 0.0.0.0 --port 8000
+  setup: pip install "fastapi>=0.110.0" "uvicorn>=0.29.0" "pydantic>=2.7.0"

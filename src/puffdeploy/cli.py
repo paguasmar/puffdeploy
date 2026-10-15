@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 import typer
 
 from puffdeploy import __version__
@@ -38,11 +39,11 @@ def init(
     Packager.scaffold_starter_project(workdir, name)
     print_success("Created app.py (FastAPI inference template) & requirements.txt")
     
-    print_step(2, 2, "Writing cloud configuration", "puffdeploy.yaml")
+    print_step(2, 2, "Writing cloud configuration", "puff.yaml")
     config = PuffConfig(name=name)
     if gpu:
         config.compute.accelerator = gpu
-    config.save(workdir / "puffdeploy.yaml")
+    config.save(workdir / "puff.yaml")
     print_success("Configuration saved to puffdeploy.yaml")
     
     console.print("\n[bold green]🚀 Ready to build and deploy:[/bold green]")
@@ -72,25 +73,25 @@ def check():
 @app.command()
 def deploy(
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate and generate cloud specs without launching EC2 instances"),
-    cloud: str = typer.Option("aws", "--cloud", help="Target cloud provider (aws/gcp)"),
-    region: str = typer.Option("us-east-1", "--region", help="Cloud region"),
-    gpu: str = typer.Option(None, "--gpu", "-g", help="Override GPU accelerator (e.g. T4:1, A10G:1)"),
+    cloud: Optional[str] = typer.Option(None, "--cloud", help="Target cloud provider (aws/gcp)"),
+    region: Optional[str] = typer.Option(None, "--region", help="Cloud region"),
+    gpu: Optional[str] = typer.Option(None, "--gpu", "-g", help="Override GPU accelerator (e.g. T4:1, A10G:1)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed verbose logs"),
 ):
     """Deploy your model service to AWS/GCP and get an instant, production-ready cURL endpoint."""
     print_banner()
     workdir = Path(".")
     
-    config_file = workdir / "puffdeploy.yaml"
-    if not config_file.exists() and not (workdir / "app.py").exists():
+    config_file = PuffConfig.find_config_file(workdir)
+    if not config_file and not (workdir / "app.py").exists():
         print_error_box(
             "Project Not Found",
-            "No 'puffdeploy.yaml' or 'app.py' found in the current directory.",
+            "No 'puff.yaml' or 'app.py' found in the current directory.",
             "Run `puff init` to create a starter project or add `app.py`."
         )
         raise typer.Exit(code=1)
         
-    config = PuffConfig.load_or_default(config_file)
+    config = PuffConfig.load_or_default(config_file, workdir=workdir)
     
     if cloud:
         config.compute.cloud = cloud
@@ -127,15 +128,16 @@ def logs(
     name: str = typer.Argument(None, help="Service name to view logs for"),
     tail: int = typer.Option(100, "--tail", "-t", help="Number of trailing log lines to show"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow live log output stream"),
+    replica: str = typer.Option("1", "--replica", "-r", help="Replica ID to view logs from"),
 ):
     """View application logs for a running Puffdeploy service."""
     print_banner()
     workdir = Path(".")
-    config = PuffConfig.load_or_default(workdir / "puffdeploy.yaml")
+    config = PuffConfig.load_or_default(workdir / "puff.yaml")
     service_name = name or config.name
     
-    console.print(f"[bold cyan]▶ Fetching logs for service '[white]{service_name}[/white]'...[/bold cyan]\n")
-    SkyPilotOrchestrator.get_service_logs(service_name, tail=tail, follow=follow)
+    console.print(f"[bold cyan]▶ Fetching logs for service '[white]{service_name}[/white]' (replica {replica})...[/bold cyan]\n")
+    SkyPilotOrchestrator.get_service_logs(service_name, tail=tail, follow=follow, replica=replica)
 
 @app.command()
 def down(
@@ -145,7 +147,7 @@ def down(
     """Tear down cloud resources cleanly to stop incurring costs."""
     print_banner()
     workdir = Path(".")
-    config = PuffConfig.load_or_default(workdir / "puffdeploy.yaml")
+    config = PuffConfig.load_or_default(workdir / "puff.yaml")
     if name:
         config.name = name
         

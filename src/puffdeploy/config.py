@@ -6,14 +6,16 @@ from pydantic import BaseModel, Field
 class ComputeConfig(BaseModel):
     cloud: str = "aws"
     region: str = "us-east-1"
+    instance_type: Optional[str] = None  # e.g. "g5.12xlarge"
     accelerator: Optional[str] = None  # e.g. "T4:1", "A10G:1", "L4:1"
-    cpus: str = "2+"
-    memory: str = "4+"
+    cpus: Optional[str] = None
+    memory: Optional[str] = None
     use_spot: bool = False
 
 class ServiceConfig(BaseModel):
     port: int = 8000
     readiness_probe: str = "/health"
+    initial_delay_seconds: int = 1200
     predict_path: str = "/predict"
     min_replicas: int = 1
     max_replicas: int = 1
@@ -40,14 +42,23 @@ class PuffConfig(BaseModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
     @classmethod
-    def load_or_default(cls, path: Path = Path("puffdeploy.yaml")) -> "VeloxConfig":
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
+    def find_config_file(cls, workdir: Path = Path(".")) -> Optional[Path]:
+        for candidate in ["puff.yaml", "puffdeploy.yaml", "veloxml.yaml"]:
+            p = workdir / candidate
+            if p.exists():
+                return p
+        return None
+
+    @classmethod
+    def load_or_default(cls, path: Optional[Path] = None, workdir: Path = Path(".")) -> "PuffConfig":
+        target = path if (path and path.exists()) else cls.find_config_file(workdir)
+        if target and target.exists():
+            with open(target, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
                 return cls(**data)
         return cls()
 
-    def save(self, path: Path = Path("puffdeploy.yaml")):
+    def save(self, path: Path = Path("puff.yaml")):
         data = self.model_dump(exclude_none=True)
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, sort_keys=False, default_flow_style=False)

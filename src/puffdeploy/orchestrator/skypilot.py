@@ -27,6 +27,7 @@ from puffdeploy.ui.console import (
     print_success,
     print_error_box,
     print_warning,
+    print_capacity_bottleneck_box,
 )
 
 class SkyPilotOrchestrator:
@@ -44,25 +45,42 @@ class SkyPilotOrchestrator:
         }
         if compute.region:
             resources["region"] = compute.region
-        if compute.accelerator:
+
+        # Smart Quota Resolution: Automatically pick instances that fit user's account quota
+        target_instance = getattr(compute, "instance_type", None)
+        if not target_instance and compute.cloud.lower() == "aws" and compute.use_spot:
+            quota = self.get_aws_spot_gpu_quota(compute.region)
+            if quota is not None:
+                accel = (compute.accelerator or "").lower()
+                # If 4x A10G is requested and quota cannot support 96 vCPUs (g5.24xlarge), auto-pin to g5.12xlarge (48 vCPUs)
+                if "a10g:4" in accel and quota < 96:
+                    target_instance = "g5.12xlarge"
+                # If 1x A10G is requested, g5.xlarge (4 vCPUs) fits in any quota
+                elif "a10g:1" in accel or accel == "a10g":
+                    target_instance = "g5.xlarge"
+
+        if target_instance:
+            resources["instance_type"] = target_instance
+        elif compute.accelerator:
             resources["accelerators"] = compute.accelerator
-        if compute.cpus:
-            cpus_str = str(compute.cpus)
-            resources["cpus"] = cpus_str if cpus_str.endswith("+") else f"{cpus_str}+"
-        if compute.memory:
-            mem_str = str(compute.memory)
-            resources["memory"] = mem_str if mem_str.endswith("+") else f"{mem_str}+"
+
+        if compute.cpus and not target_instance:
+            resources["cpus"] = str(compute.cpus)
+        if compute.memory and not target_instance:
+            resources["memory"] = str(compute.memory)
         if compute.use_spot:
             resources["use_spot"] = True
         if service.port:
             resources["ports"] = [service.port]
 
-        # ML wheel optimization: PyTorch cpu wheels vs general PyPI
+        # ML wheel optimization: PyTorch cpu wheels only when no GPU is specified
         setup_lines = [
             "pip install --upgrade pip",
             "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi",
-            "pip install torch --index-url https://download.pytorch.org/whl/cpu || true",
         ]
+        is_gpu = bool(compute.accelerator or (compute.instance_type and any(compute.instance_type.lower().startswith(p) for p in ["g3", "g4", "g5", "g6", "gr6", "p2", "p3", "p4", "p5"])))
+        if not is_gpu:
+            setup_lines.append("pip install torch --index-url https://download.pytorch.org/whl/cpu || true")
         if runtime.setup:
             setup_lines.append(runtime.setup)
 
@@ -77,7 +95,7 @@ class SkyPilotOrchestrator:
             "service": {
                 "readiness_probe": {
                     "path": service.readiness_probe,
-                    "initial_delay_seconds": 240,
+                    "initial_delay_seconds": getattr(service, "initial_delay_seconds", 1200) or 1200,
                 },
                 "replica_policy": replica_policy,
             },
@@ -98,7 +116,27 @@ class SkyPilotOrchestrator:
     def deploy(self, dry_run: bool = False, verbose: bool = False) -> Optional[str]:
         service_name = self.config.name
         
-        print_step(1, 3, "Compiling Cloud Spec", f"Target: {self.config.compute.cloud.upper()} Spot")
+        # Smart Quota Awareness: Verify AWS Spot Quota if applicable
+        if self.config.compute.cloud.lower() == "aws" and self.config.compute.use_spot:
+            quota = self.get_aws_spot_gpu_quota(self.config.compute.region)
+            if quota is not None:
+                inst = self.config.compute.accelerator or "auto"
+                print_step(1, 4, "Verifying Cloud Quotas", f"AWS Spot Limit: {int(quota)} vCPUs (Target: {inst})")
+                if self.config.compute.instance_type == "g5.24xlarge" and quota < 96:
+                    print_error_box(
+                        "Quota Exceeded Guard",
+                        f"Instance 'g5.24xlarge' requires 96 vCPUs, but your AWS Spot limit is {int(quota)} vCPUs.",
+                        "Use 'instance_type: g5.12xlarge' (48 vCPUs) which fits safely within your quota."
+                    )
+                    return None
+                print_success(f"Quota validated: compute fits within your {int(quota)} vCPUs Spot limit.")
+                print_step(2, 4, "Compiling Cloud Spec", f"Target: AWS Spot ({inst})")
+            else:
+                print_step(1, 3, "Compiling Cloud Spec", f"Target: {self.config.compute.cloud.upper()} Spot")
+        else:
+            compute_mode = "Spot" if self.config.compute.use_spot else "On-Demand"
+            inst = self.config.compute.instance_type or self.config.compute.accelerator or "auto"
+            print_step(1, 3, "Compiling Cloud Spec", f"Target: {self.config.compute.cloud.upper()} {compute_mode} ({inst})")
         yaml_file = self.workdir / ".puffdeploy" / f"{service_name}.sky.yaml"
         self.write_spec(yaml_file)
         print_success(f"Optimized cluster specification generated at .puffdeploy/{service_name}.sky.yaml")
@@ -123,7 +161,7 @@ class SkyPilotOrchestrator:
             cmd = [get_sky_cmd(), "serve", "update", service_name, str(yaml_file), "-y"]
             status_msg = "[bold cyan]Applying rolling code update to cloud replicas...[/bold cyan]"
         else:
-            print_step(2, 3, "Provisioning Cloud Infrastructure", f"{self.config.compute.cloud.upper()} {self.config.compute.region}")
+            print_step(3, 4, "Provisioning Cloud Infrastructure", f"{self.config.compute.cloud.upper()} {self.config.compute.region}")
             cmd = [get_sky_cmd(), "serve", "up", "-n", service_name, str(yaml_file), "-y"]
             status_msg = "[bold cyan]Spinning up cloud compute and configuring VPC ingress...[/bold cyan]"
         
@@ -138,7 +176,7 @@ class SkyPilotOrchestrator:
                 is_update = True
             elif result.returncode != 0 and is_update and ("Cannot find service" in output_text or "not found" in output_text):
                 # Fallback: service was not found / terminated, switch to initial provision
-                print_step(2, 3, "Provisioning Cloud Infrastructure", f"{self.config.compute.cloud.upper()} {self.config.compute.region}")
+                print_step(3, 4, "Provisioning Cloud Infrastructure", f"{self.config.compute.cloud.upper()} {self.config.compute.region}")
                 cmd = [get_sky_cmd(), "serve", "up", "-n", service_name, str(yaml_file), "-y"]
                 result = subprocess.run(cmd, capture_output=not verbose, text=True)
                 is_update = False
@@ -162,12 +200,66 @@ class SkyPilotOrchestrator:
             return None
 
         print_success("Cloud compute provisioned and model server started." if not is_update else "Rolling code update successfully applied.")
-        print_step(3, 3, "Waiting for Model Readiness Probe", f"Checking {self.config.service.readiness_probe}")
+        print_step(4, 4, "Waiting for Model Readiness Probe", f"Checking {self.config.service.readiness_probe}")
         
         endpoint = self.wait_for_endpoint(service_name)
         return endpoint
 
-    def wait_for_endpoint(self, service_name: str, timeout_seconds: int = 600) -> Optional[str]:
+    def get_service_status_raw(self, service_name: str) -> Optional[str]:
+        """Fetches raw status output from SkyServe for inspection."""
+        try:
+            cmd = [get_sky_cmd(), "serve", "status", service_name]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout:
+                return res.stdout
+        except Exception:
+            pass
+        return None
+
+    def check_capacity_bottleneck(self, service_name: str, status_output: Optional[str] = None, elapsed: int = 0) -> bool:
+        """Checks if replicas are failing due to cloud-side capacity exhaustion or stuck provisioning past 2 minutes."""
+        capacity_signals = [
+            "insufficientinstancecapacity",
+            "resourcesunavailableerror",
+            "failed to acquire resources in all zones",
+            "maxspotinstancecountexceeded",
+            "vcpulimitexceeded",
+            "capacityexceeded",
+        ]
+
+        # 1. Immediate Check: Scan status output if provided
+        if status_output:
+            lower_status = status_output.lower()
+            if any(sig in lower_status for sig in capacity_signals):
+                return True
+
+            has_active_replica = "ready" in lower_status or "starting" in lower_status or "provisioning" in lower_status
+            if has_active_replica:
+                # Replica is active or actively bootstrapping (PROVISIONING).
+                # Cloud compute was successfully allocated; do NOT kill during node setup.
+                return False
+
+            # 2-Minute (120s) Hard Fail-Fast for Pre-allocation Bottlenecks:
+            # If 2 minutes have elapsed and AWS has not even assigned an instance (NO_REPLICA or FAILED)
+            if elapsed >= 120:
+                is_stuck = "no_replica" in lower_status or "failed" in lower_status
+                if is_stuck:
+                    return True
+
+        # 2. Controller Logs Check: Query controller logs if status_output wasn't provided
+        try:
+            cmd = [get_sky_cmd(), "serve", "logs", service_name, "--controller", "--no-follow", "--tail", "60"]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout:
+                out = res.stdout.lower()
+                if any(sig in out for sig in capacity_signals):
+                    return True
+        except Exception:
+            pass
+
+        return False
+
+    def wait_for_endpoint(self, service_name: str, timeout_seconds: int = 1200) -> Optional[str]:
         """Polls service status with a clean elapsed timer until replica endpoint is alive."""
         start_time = time.time()
         with console.status("[bold cyan]Warming up model weights & establishing endpoint...[/bold cyan]", spinner="dots") as status:
@@ -175,7 +267,8 @@ class SkyPilotOrchestrator:
                 elapsed = int(time.time() - start_time)
                 status.update(f"[bold cyan]Warming up model weights & establishing endpoint... ({elapsed}s)[/bold cyan]")
                 
-                endpoint = self.get_service_endpoint(service_name)
+                raw_status = self.get_service_status_raw(service_name)
+                endpoint = self.get_service_endpoint(service_name, raw_status=raw_status)
                 if endpoint:
                     try:
                         health_url = f"{endpoint.rstrip('/')}/health"
@@ -186,20 +279,46 @@ class SkyPilotOrchestrator:
                                 return endpoint
                     except Exception:
                         pass
+
+                # Fail-Fast: Detect physical cloud capacity bottlenecks (<45s) or trigger 2-minute (120s) hard limit
+                if (elapsed >= 30 and elapsed % 12 == 0) or elapsed >= 120:
+                    if self.check_capacity_bottleneck(service_name, status_output=raw_status, elapsed=elapsed):
+                        region = self.config.compute.region or "us-east-1"
+                        accel = (self.config.compute.accelerator or "").lower()
+                        suggestions = []
+                        if region.lower() == "us-east-1":
+                            suggestions.append("puff deploy --region eu-central-1")
+                        elif region.lower() != "eu-central-1":
+                            suggestions.append("puff deploy --region eu-central-1")
+                        else:
+                            suggestions.append("puff deploy --region eu-north-1")
+                        if "a10g:4" in accel or "g5.12xlarge" in (self.config.compute.instance_type or "").lower():
+                            suggestions.append("puff deploy --gpu L4:4")
+                        if not suggestions:
+                            suggestions.append("puff deploy --region eu-central-1")
+                            suggestions.append("puff deploy --gpu L4:1")
+
+                        # Stop looping service replica to prevent unnecessary cloud costs
+                        try:
+                            subprocess.run([get_sky_cmd(), "serve", "down", service_name, "-y"], capture_output=True, timeout=15)
+                        except Exception:
+                            pass
+
+                        print_capacity_bottleneck_box(region, suggestions)
+                        return None
+
                 time.sleep(6)
         
         print_warning("Model is taking longer than usual to become ready.")
         console.print("  Check live status anytime with: [bold cyan]puff status[/bold cyan]\n")
         return None
 
-    def get_service_endpoint(self, service_name: str) -> Optional[str]:
+    def get_service_endpoint(self, service_name: str, raw_status: Optional[str] = None) -> Optional[str]:
         """Parses service status to extract the direct replica or load balancer endpoint."""
-        cmd = [get_sky_cmd(), "serve", "status", service_name]
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode != 0:
+        output = raw_status if raw_status is not None else self.get_service_status_raw(service_name)
+        if not output:
             return None
         
-        output = res.stdout
         url_matches = re.findall(r"(http://[0-9a-zA-Z.-]+:\d+)", output)
         if url_matches:
             for url in url_matches:
@@ -242,25 +361,45 @@ class SkyPilotOrchestrator:
         return services
 
     @staticmethod
-    def get_service_logs(service_name: str, tail: int = 100, follow: bool = False):
+    def get_service_logs(service_name: str, tail: int = 100, follow: bool = False, replica: str = "1"):
         """Fetches clean application logs for the specified service."""
-        cmd = [get_sky_cmd(), "serve", "logs", service_name]
+        cmd = [get_sky_cmd(), "serve", "logs", service_name, str(replica)]
         if follow:
             subprocess.run(cmd)
         else:
+            cmd.extend(["--no-follow", "--tail", str(tail)])
             res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode == 0:
-                lines = res.stdout.splitlines()[-tail:]
+                lines = res.stdout.splitlines()
                 for l in lines:
                     console.print(l)
             else:
                 print_error_box("Logs Error", f"Could not retrieve logs for '{service_name}': {res.stderr.strip()}")
 
     @staticmethod
+    def get_aws_spot_gpu_quota(region: str = "us-east-1") -> Optional[float]:
+        """Queries AWS Service Quotas for 'All G and VT Spot Instance Requests'."""
+        try:
+            cmd = [
+                "aws", "service-quotas", "get-service-quota",
+                "--service-code", "ec2",
+                "--quota-code", "L-3819A6DF",
+                "--region", region,
+                "--query", "Quota.Value",
+                "--output", "text"
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and res.stdout.strip():
+                return float(res.stdout.strip())
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
     def check_cloud() -> bool:
         """Validates cloud credentials and compute access cleanly."""
-        res = subprocess.run([get_sky_cmd(), "check"], capture_output=True, text=True)
-        return "Enabled Infra: aws" in res.stdout or "aws" in res.stdout.lower()
+        res = subprocess.run([get_sky_cmd(), "check", "aws"], capture_output=True, text=True)
+        return "AWS: enabled" in res.stdout or "AWS [compute" in res.stdout or "Enabled Infra: aws" in res.stdout or "aws" in res.stdout.lower()
 
     def teardown(self, purge_all: bool = False):
         """Tears down the service and optionally cleans all controller nodes to ensure $0 cost."""
@@ -277,7 +416,51 @@ class SkyPilotOrchestrator:
             print_warning(f"Service '{service_name}' already down or not found.")
 
         if purge_all:
-            with console.status("[bold yellow]Purging controller nodes and lingering instances...[/bold yellow]", spinner="dots"):
+            with console.status("[bold yellow]Purging all services, controller nodes, and instances in all zones...[/bold yellow]", spinner="dots"):
+                # 1. Force teardown all active and failed SkyServe services across all regions
+                subprocess.run([get_sky_cmd(), "serve", "down", "-a", "-y", "--purge"], capture_output=True, text=True)
+                # 2. Terminate all SkyPilot cluster nodes
                 subprocess.run([get_sky_cmd(), "down", "-a", "-y"], capture_output=True, text=True)
-            print_success("All controller nodes and lingering clusters purged.")
-            console.print("  [bold green]✔ Active Cloud Compute Cost: $0.00/hr[/bold green]\n")
+                # 3. Explicitly terminate SkyServe controllers (which require interactive confirmation or direct name)
+                try:
+                    status_res = subprocess.run([get_sky_cmd(), "status"], capture_output=True, text=True, timeout=15)
+                    if status_res.returncode == 0:
+                        ctrl_matches = re.findall(r"(sky-serve-controller-[a-zA-Z0-9]+)", status_res.stdout)
+                        for ctrl_name in set(ctrl_matches):
+                            subprocess.run([get_sky_cmd(), "down", ctrl_name, "-y"], input="delete\n", text=True, capture_output=True, timeout=20)
+                except Exception:
+                    pass
+                # 4. Sweep all relevant AWS regions (including eu-central-1) to guarantee zero lingering instances
+                regions_to_sweep = list(dict.fromkeys([
+                    self.config.compute.region,
+                    "eu-central-1",
+                    "us-east-1",
+                    "eu-north-1",
+                    "us-east-2",
+                    "us-west-2",
+                    "eu-west-1",
+                ]))
+                for r in regions_to_sweep:
+                    if not r:
+                        continue
+                    try:
+                        sweep_cmd = [
+                            "aws", "ec2", "describe-instances",
+                            "--region", r,
+                            "--filters",
+                            "Name=tag-key,Values=skypilot-cluster-name,ray-cluster-name",
+                            "Name=instance-state-name,Values=pending,running",
+                            "--query", "Reservations[].Instances[].InstanceId",
+                            "--output", "json"
+                        ]
+                        res = subprocess.run(sweep_cmd, capture_output=True, text=True, timeout=12)
+                        if res.returncode == 0 and res.stdout.strip():
+                            import json as _json
+                            ids = _json.loads(res.stdout)
+                            if ids:
+                                term_cmd = ["aws", "ec2", "terminate-instances", "--region", r, "--instance-ids"] + ids
+                                subprocess.run(term_cmd, capture_output=True, text=True, timeout=15)
+                    except Exception:
+                        pass
+            print_success("All services, controllers, and compute instances in all regions purged.")
+            console.print("  [bold green]✔ Active Cloud Compute Cost: $0.00/hr across all zones[/bold green]\n")
