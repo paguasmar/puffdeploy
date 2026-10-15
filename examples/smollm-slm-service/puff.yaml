@@ -1,0 +1,7 @@
+name: smollm-service
+compute:
+  cpus: 4+
+  memory: 8+
+  use_spot: true
+runtime:
+  setup: pip install fastapi uvicorn transformers accelerate
